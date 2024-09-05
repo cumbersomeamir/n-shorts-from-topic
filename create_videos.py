@@ -1,13 +1,17 @@
-#pip install openai
+#pip install openai elevenlabs pydub moviepy
 
 import openai
 import time
 import os
+import uuid
 from elevenlabs import VoiceSettings
 from elevenlabs.client import ElevenLabs
 import requests
 import json
 import re
+from pydub import AudioSegment
+from moviepy.video.io.VideoFileClip import VideoFileClip
+from moviepy.editor import VideoFileClip, AudioFileClip
 
 
 os.getenv("OPENAI_API_KEY")
@@ -23,6 +27,8 @@ client = OpenAI()
 
 topic = str(input("Enter the name of the topic "))
 num_facts = str(input("Enter the number of facts "))
+
+
 
 content = "This is the topic"+ topic + "Your job is to generate" + num_facts +  "unknown/less known/mysterious facts about the topic. Please only give facts as a numbered list like 1. Fact 1 2. Fact 2 3. Fact 3 and so on"
 
@@ -100,21 +106,41 @@ def get_history_item_id():
     history_item_id = resp.history[0].history_item_id
     return history_item_id
 
+# Initialize an array to store the durations
+durations = []
+
 def create_audiofile(count, history_item_id):
+    output_folder = "trimmed_audio"
     client = ElevenLabs(
-    api_key=api_key,
-)
+        api_key=api_key,
+    )
+    
     # Getting the audio generator
     audio_generator = client.history.get_audio(
         history_item_id=str(history_item_id),
     )
-    filename = str(count)+".mp3"
+    
+    # Generate a unique ID for the filename
+    unique_id = str(uuid.uuid4())
+    filename = f"{unique_id}.mp3"
+    
+    # Full path to save the file in the trimmed_audio folder
+    file_path = os.path.join(output_folder, filename)
+    
     # Saving the audio data to a file
-    with open(filename, "wb") as audio_file:
+    with open(file_path, "wb") as audio_file:
         for chunk in audio_generator:
             audio_file.write(chunk)
 
-    print(filename+ "saved successfully")
+    # Load the saved audio file to get its duration
+    audio = AudioSegment.from_file(file_path)
+    duration = len(audio) / 1000  # Duration in seconds
+    durations.append(duration)  # Append duration to the list
+
+    print(f"{file_path} saved successfully, duration: {duration} seconds")
+    
+
+# At the end of your process, you'll have the `durations` array with all the lengths
 
 
 
@@ -135,7 +161,86 @@ for fact in facts_array:
     
 #To do file structure where the audios are saved
 #Get the length of audio file
+print("All the durations are ", durations)
+print("Type of durations is ", type(durations))
 #Split video according to length of audio files and save in a different folder
-#Run loop to compile the final videos
-# Add background music
+def trim_and_save_clips(input_video, durations, output_folder):
+    # Load the video file
+    video = VideoFileClip(input_video)
 
+    # Create a list to store the trimmed clips
+    trimmed_clips = []
+
+    # Starting point of the trim
+    start_time = 0
+
+    # Check if output folder exists, if not create it
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    # Iterate over the durations array and create trimmed clips
+    for duration in durations:
+        end_time = start_time + duration
+        # Extract the clip from start_time to end_time
+        trimmed_clip = video.subclip(start_time, end_time)
+        trimmed_clips.append(trimmed_clip)
+        # Update start_time for the next trim
+        start_time = end_time
+
+    # Save the trimmed clips as new video files with unique IDs
+    for clip in trimmed_clips:
+        unique_id = str(uuid.uuid4())  # Generate a unique ID
+        output_filename = os.path.join(output_folder, f"trimmed_clip_{unique_id}.mp4")
+        clip.write_videofile(output_filename, codec="libx264")
+
+    # Close the video and clips to free up resources
+    video.close()
+    for clip in trimmed_clips:
+        clip.close()
+
+# Example usage:
+input_video = "youtube_video.mp4"
+output_folder = "trimmed_clips"
+
+trim_and_save_clips(input_video, durations, output_folder)
+
+#Run loop to compile the final videos
+
+
+def combine_video_audio(trimmed_clips_dir, trimmed_audio_dir, combined_media_dir):
+    # Helper function to filter out non-media files
+    def is_media_file(filename):
+        return filename.lower().endswith(('.mp4', '.mp3'))  # Modify this if you have other formats
+    
+    # Get the list of video and audio files, filtering out non-media files
+    video_files = sorted([f for f in os.listdir(trimmed_clips_dir) if is_media_file(f)])
+    audio_files = sorted([f for f in os.listdir(trimmed_audio_dir) if is_media_file(f)])
+    
+    # Ensure both directories have the same number of files
+    if len(video_files) != len(audio_files):
+        raise ValueError("The number of video files and audio files do not match.")
+    
+    # Loop through the files and combine them
+    for video_file, audio_file in zip(video_files, audio_files):
+        # Construct full file paths
+        video_path = os.path.join(trimmed_clips_dir, video_file)
+        audio_path = os.path.join(trimmed_audio_dir, audio_file)
+        
+        # Load video and audio
+        video_clip = VideoFileClip(video_path)
+        audio_clip = AudioFileClip(audio_path)
+        
+        # Combine video and audio
+        final_clip = video_clip.set_audio(audio_clip)
+        
+        # Save the final output
+        output_path = os.path.join(combined_media_dir, video_file)
+        final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac")
+        
+        # Close clips to free up resources
+        video_clip.close()
+        audio_clip.close()
+
+# Example usage
+combine_video_audio("trimmed_clips", "trimmed_audio", "combined_media")
+# Add background music

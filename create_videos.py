@@ -11,7 +11,8 @@ import json
 import re
 from pydub import AudioSegment
 from moviepy.video.io.VideoFileClip import VideoFileClip
-from moviepy.editor import VideoFileClip, AudioFileClip
+from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip
+import random
 
 
 os.getenv("OPENAI_API_KEY")
@@ -243,4 +244,62 @@ def combine_video_audio(trimmed_clips_dir, trimmed_audio_dir, combined_media_dir
 
 # Example usage
 combine_video_audio("trimmed_clips", "trimmed_audio", "combined_media")
-# Add background music
+# Create folder with different background music
+
+
+
+def add_background_music_to_videos(combined_media_dir, background_music_file, final_media_dir):
+    # Ensure the output directory exists
+    if not os.path.exists(final_media_dir):
+        os.makedirs(final_media_dir)
+
+    # Load the background music
+    background_music = AudioFileClip(background_music_file)
+    
+    # Get the duration of the background music
+    music_duration = background_music.duration
+
+    # Process each video in the combined_media directory
+    for video_file in os.listdir(combined_media_dir):
+        if video_file.endswith('.mp4'):
+            video_path = os.path.join(combined_media_dir, video_file)
+            
+            # Load the video
+            video = VideoFileClip(video_path)
+            
+            # Get the duration of the video
+            video_duration = video.duration
+            
+            # Calculate the latest possible start time for the background music
+            latest_start = max(0, music_duration - video_duration - 60)
+            
+            # Choose a random start time for the background music
+            music_start_time = random.uniform(0, latest_start)
+            
+            # Extract the portion of background music we need
+            music_clip = background_music.subclip(music_start_time, music_start_time + video_duration)
+            
+            # Adjust the volume of the background music (e.g., to 20% of its original volume)
+            music_clip = music_clip.volumex(0.2)
+            
+            # Combine the original audio and the background music
+            final_audio = CompositeAudioClip([video.audio, music_clip])
+            
+            # Set the final audio to the video
+            final_video = video.set_audio(final_audio)
+            
+            # Generate the output file path
+            output_path = os.path.join(final_media_dir, f"final_{video_file}")
+            
+            # Write the final video file
+            final_video.write_videofile(output_path, codec="libx264", audio_codec="aac")
+            
+            # Close the clips to free up resources
+            video.close()
+            final_video.close()
+
+    # Close the background music clip
+    background_music.close()
+
+# Example usage
+add_background_music_to_videos("combined_media", "background_music.mp3", "final_media")

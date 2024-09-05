@@ -303,3 +303,7 @@ def add_background_music_to_videos(combined_media_dir, background_music_file, fi
 
 # Example usage
 add_background_music_to_videos("combined_media", "background_music.mp3", "final_media")
+
+
+#Add support for captions
+
